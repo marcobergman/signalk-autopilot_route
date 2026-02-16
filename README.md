@@ -14,4 +14,4 @@ The web app is mainly for development purposes and it shows the current active r
 
 The plugin has been tested with, and is intended for use with the FreeboardSK plotter, but it effectively feeds off the data of the SignalK Course Provider server plugin, meaning it runs within Signalk, without any plotter being active. This way you can conserve battery energy by switching off your (plotter) screens.
 
-This plugin is entirely based on the eponymous OpenCPN plugin by Sean d'Epagnier. https://github.com/pypilot/workbook/wiki/Autopilot-Route-Plugin
+This plugin is entirely based on the eponymous OpenCPN plugin by Sean d'Epagnier https://github.com/pypilot/workbook/wiki/Autopilot-Route-Plugin, and built off the SignalK Anchor Alarm app by Scott Bender.
