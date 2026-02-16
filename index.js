@@ -19,39 +19,62 @@ const geolib = require('geolib')
 const csv = require('fast-csv');
 const {intersectSphericalCircles} = require('./vector3');
 
-const subscribrPeriod = 30
+const subscribrPeriod = 1000
+
+function createNmeaSentence(payload) {
+  let checksum = 0;
+  for (let i = 0; i < payload.length; i++) {
+    checksum ^= payload.charCodeAt(i);
+  }
+
+  const hex = checksum.toString(16).toUpperCase().padStart(2, '0');
+
+  //return `$${payload}*${hex}\r\n`;
+  return `$${payload}*${hex}`;
+}
+
+
+function n(h) {
+  // normalize heading to (-180, 180)
+  h = h % 360;
+  if (h>180)
+    return h-360
+  else
+    return h
+}
+
 
 module.exports = function (app) {
   var plugin = {}
   var alarm_sent = false
-  var prev_anchorState = false
   let onStop = []
   var positionInterval
   var positionAlarmSent = false
   var configuration
   var delayStartTime
   var lastTrueHeading
+  var currentPosition
   var previousPoint
+  var xte
   var nextPoint
+  var currentGuidePoint
+  var headingPoint
+  var guidePointBearing
+  var segmentHeading
+  var headingToSteer
+  var guideRadius
   var saveOptionsTimer
   var track = []
-  var incompleteAnchorTimer
-  var sentIncompleteAnchorAlarm
   var statePath
   var state
+  var activeRoute
+  var routePoints
 
   plugin.start = function (props) {
     configuration = props
     try {
-      startWatchingPosistion();
-
-      if (app.registerActionHandler) {
-        app.registerActionHandler(
-          'vessels.self',
-          `navigation.anchor.rodeLength`,
-          putRodeLength
-        )
-      }
+      app.debug ("starting");
+      startWatchingPosition();
 
       app.handleMessage(plugin.id, {
         updates: [
@@ -116,9 +139,9 @@ module.exports = function (app) {
       clearInterval(positionInterval)
       positionInterval = null
     }
-  }
+    calculateDistance  }
 
-  function startWatchingPosistion() {
+  function startWatchingPosition() {
     if (onStop.length > 0) return
 
     track = []
@@ -137,6 +160,18 @@ module.exports = function (app) {
           {
             path: 'navigation.course.previousPoint',
             period: subscribrPeriod
+          },
+          {
+            path: 'navigation.course.calcValues.crossTrackError',
+            period: subscribrPeriod
+          },
+          {
+            path: 'resources.routes.*',
+            period: subscribrPeriod
+          },
+          {
+            path: 'navigation.course.activeRoute', 
+            period: subscribrPeriod
           }
         ]
       },
@@ -153,38 +188,68 @@ module.exports = function (app) {
             if (update.values) {
               update.values.forEach((vp) => {
                 if (vp.path === 'navigation.position') {
-                  position = vp.value
-                  if (typeof position !== 'undefined' && typeof previousPoint !== 'undefined' && typeof nextPoint !== 'undefined' && previousPoint && nextPoint) {
-                      intersections = intersectSphericalCircles (previousPoint.position, nextPoint.position, position, 100)
+                  currentPosition = vp.value
+                  if (!xte || xte == 'undefined') xte = 0;
+                  // app.debug(`currentPosition ${currentPosition} previousPoint ${previousPoint} nextPoint ${nextPoint} xte ${xte}`);
+                  if (typeof currentPosition !== 'undefined' && typeof previousPoint !== 'undefined' && typeof nextPoint !== 'undefined' && xte !== 'undefined' && previousPoint && nextPoint) {
+		      guideRadius = configuration["guideRadius"];
+                      intersections = intersectSphericalCircles (previousPoint.position, nextPoint.position, currentPosition, guideRadius)
                       let guidePoint
-                      minDistance = 10000
+                      segmentHeading = geolib.getRhumbLineBearing (previousPoint.position, nextPoint.position);
                       intersections.forEach(i => {
-                         d = geolib.getDistance (nextPoint.position, i, 1)
-                         if (d < minDistance) {
-                             minDistance = d;
+			 // pick the intersection that is in the general direction of the active route segment
+			 intersectionBearing = geolib.getRhumbLineBearing (currentPosition, i);
+			 difference = n(intersectionBearing - segmentHeading)
+                         if (-90 < difference  && difference < +90) {
                              guidePoint = i;
                          }
-			 //app.debug("intersection", i, d)
 		      })
-                      if (guidePoint) {
-                          bearing = geolib.getRhumbLineBearing (position, guidePoint)
-                          app.debug("guidePoint", guidePoint, "bearing", bearing);
-                      } else console.log("Traala");
-                  }
+                      if (! guidePoint)
+                         guidePoint = nextPoint.position;
+                      currentGuidePoint = guidePoint;
+                      guidePointBearing = geolib.getRhumbLineBearing (currentPosition, guidePoint);
+                      difference = n(guidePointBearing - segmentHeading)
+		      distanceToPreviousPoint = geolib.getDistance(currentPosition, previousPoint.position)
+		      if (distanceToPreviousPoint > guideRadius) {
+		            // outside arrival circle (~= guideRadius), clamp to maxErorAngle
+		            maxErrorAngle = configuration["maxErrorAngle"]
+                            if (difference < -maxErrorAngle) difference = -maxErrorAngle;
+                            if (difference > maxErrorAngle) difference = maxErrorAngle;
+                            headingToSteer = (segmentHeading + difference ) % 360;
+		      }
+		      else {
+		            // within arrival circle, simply follow guide point with no clamping
+		            headingToSteer = guidePointBearing;
+		      }
+		      const data = `ECAPB,A,A,${xte.toFixed(3)},R,N,V,V,${segmentHeading.toFixed(1)},T,,${guidePointBearing.toFixed(1)},T,${headingToSteer.toFixed(1)},T`;
+		      const fullSentence = createNmeaSentence(data);
+		      app.emit(configuration["eventName"], fullSentence);
+		      headingPoint = geolib.computeDestinationPoint(currentPosition, guideRadius, headingToSteer);
+                }
                 } else if (vp.path === 'navigation.course.nextPoint') {
                   nextPoint = vp.value
                 } else if (vp.path === 'navigation.course.previousPoint') {
                   previousPoint = vp.value
+                } else if (vp.path === 'navigation.course.calcValues.crossTrackError') {
+                  xte = vp.value / 1852; // meters to nautical miles
+                } else if (vp.path === 'navigation.course.activeRoute') {
+                  v = String(vp.value.href);
+                  activeRoute = String(v.split('/').slice(-1))
+		  app.debug("activeRoute", activeRoute);    
+                } else if (String(vp.path.split('.').slice(-1)) === activeRoute) {
+		  routePoints = vp.value.feature.geometry.coordinates;
+                  app.debug ("geometry", routePoints);
+                } else { app.debug("else", vp.path, activeRoute.href, vp);
                 }
               })
             }
           })
         }
 
-        if (position) {
+        if (currentPosition) {
         }
 
-        if (typeof trueHeading !== 'undefined' || position) {
+        if (typeof trueHeading !== 'undefined' || currentPosition) {
           if (typeof trueHeading !== 'undefined') {
             lastTrueHeading = trueHeading
           }
@@ -213,12 +278,6 @@ module.exports = function (app) {
           app.getSelfPath('navigation.headingTrue.value')
         )
 
-        app.debug(
-          'set anchor position to: ' +
-            position.latitude +
-            ' ' +
-            position.longitude
-        )
         var radius = req.body['radius']
         if (typeof radius == 'undefined') {
           radius = null
@@ -231,41 +290,37 @@ module.exports = function (app) {
       res.json(track)
     })
 
-    router.get('/getEP', (req, res) => {
-	  vesselPosition = app.getSelfPath('navigation.position.value')
-	  res.json({"latitude": vesselPosition.latitude - 0.001, "longitude": vesselPosition.longitude - 0.001})
-    })
-
-    router.get('/getHeel', (req, res) => {
-	  res.json({"heel": 9})
-    })
-
-    router.get('/getDrift', (req, res) => {
-	  res.json({"drift": 5})
-    })
-
-    router.get('/getCurrent', (req, res) => {
-    })
-
-    router.get('/getDrift', (req, res) => {
-      res.json(2.0)
+    router.get('/getData', (req, res) => {
+      if(previousPoint && nextPoint)
+      res.json({"previousPoint": previousPoint.position, 
+                "nextPoint": nextPoint.position, 
+		"currentPosition": currentPosition, 
+		"currentGuidePoint": currentGuidePoint, 
+		"guideRadius": configuration["guideRadius"],
+		"maxErrorAngle": configuration["maxErrorAngle"],
+		"guidePointBearing": guidePointBearing,
+		"segmentHeading": segmentHeading,
+		"headingToSteer": headingToSteer,
+		"headingPoint": headingPoint,
+		"routePoints": routePoints
+		})
     })
 
   }
 
 
 	
-  plugin.id = 'deadreckoner'
+  plugin.id = 'signalk-autopilot_route'
   plugin.name = 'Autopilot Route Follower'
   plugin.description =
-    "Plugin that generates APB messages that point to the active leg in a route in a smart way, and sends these messages to pypilot."
+    "Plugin that creates 'smooth' APB messages for Pyilot based on the Route Position Bearing algorithm"
 
   plugin.schema = {
     title: 'Autopilot Route Follower',
     type: 'object',
-    required: ['radius', 'active'],
+    required: ['guideRadius', 'active'],
     properties: {
-      radius: {
+      guideRadius: {
         type: 'number',
         title:
           'Guide radius (m)',
@@ -276,10 +331,10 @@ module.exports = function (app) {
         title: 'Maximum error angle to divert from the leg heading (degrees)',
         default: 15
       },
-      pypilotIpAddress: {
-        title: 'pypilotIpAddress',
+      eventName: {
+        title: 'eventName',
         type: 'string',
-        default: '10.10.10.3'
+        default: 'autopilot_route'
       }
     }
   }
