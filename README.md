@@ -1,7 +1,8 @@
 # signalk-autopilot_route
 Plugin that creates 'smooth' APB messages for Pyilot based on the Route Position Bearing algorithm. Primarily intended for PyPilot, this algorithm projects a fixed radius guide circle over the route, and steers towards the most forward intersection. This algorithm performs optimally in the vicinity of waypoints where the cross track error is not zero. If the resulting Heading to Steer (B) differs more than a maximum error angle from the route segment (A), it is clamped to that angle (C). 
 
-<p align="center"><img width="417" height="255" alt="image" src="https://github.com/user-attachments/assets/ba0955fb-9480-4cfb-ae5f-c6e60dc17b82" /></p>
+<p align="center"><img width="872" height="380" alt="image" src="https://github.com/user-attachments/assets/98c3e5eb-9b96-4e22-9626-75ee25bd75ef" />
+</p>
 
 Plugin config seeting include Guide Radius (m) defaulting to 100m, Maximum Error Angle, defaulting to 20 degrees, and the Event Name that can be used as an Output Event in the Data Connection towards the NMEA0183 interface of a autopilot:
 
