@@ -234,7 +234,8 @@ module.exports = function (app) {
                   xte = vp.value / 1852; // meters to nautical miles
                 } else if (vp.path === 'navigation.course.activeRoute') {
                   v = String(vp.value.href);
-                  activeRoute = String(v.split('/').slice(-1))
+                  activeRoute = String(v.split('/').slice(-1));
+                  routePoints = null;
 		  app.debug("activeRoute", activeRoute);    
                 } else if (String(vp.path.split('.').slice(-1)) === activeRoute) {
 		  routePoints = vp.value.feature.geometry.coordinates;
