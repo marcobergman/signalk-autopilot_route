@@ -134,20 +134,28 @@
             <span id='guideRadiusValue'>-</span>m
           </div>
         </td>
-        <td style="width: 23%; color: DeepPink">
+        <td style="width: 15%; color: DeepPink">
           <div class="heading">
             MaxErr
           </div>
           <div class="value">
-            <span id='maxErrorValue'>-</span>
+            <span id='maxErrorValue'>-</span>°
           </div>
         </td>
-        <td style="width: 23%; color: DarkOrange">
+        <td style="width: 15%; color: DarkOrange">
           <div class="heading">
             Heading
           </div>
           <div class="value">
-            <span id='headingValue'>-</span>
+            <span id='headingValue'>-</span>°
+          </div>
+        </td>
+        <td style="width: 15%; color: pink">
+          <div class="heading">
+            XTE
+          </div>
+          <div class="value">
+            <span id='xteValue'></span>m
           </div>
         </td>
       </tr>
@@ -244,7 +252,7 @@
         if (guideVector) {
 		guideVector.setLatLngs(line);
 	} else {
-		guideVector = L.polyline(line, {color: 'Green', opacity: 1}).addTo(map);
+		guideVector = L.polyline(line, {color: 'Green', opacity: 1, weight: 5}).addTo(map);
         }
 
         circleCenter = [ parseFloat(courseData.currentPosition.latitude), parseFloat(courseData.currentPosition.longitude)];
@@ -266,6 +274,7 @@
         $('#guideRadiusValue').html((0.0 + courseData.guideRadius).toFixed(0));
         $('#maxErrorValue').html((0.0 + courseData.maxErrorAngle).toFixed(0));
         $('#headingValue').html((0.0 + courseData.headingToSteer).toFixed(0));
+        $('#xteValue').html(Math.abs(0.0 + courseData.xte * 1852).toFixed(0));
         map.setView([courseData.currentPosition.latitude, courseData.currentPosition.longitude]);
         if (bounds) {
            bounds.addLatLng({"lat": epLat + deltaLat, "lng": epLng + deltaLng});
@@ -383,7 +392,7 @@
 
   function updateRoute(data) {
     var latLngs = []
-    data.forEach((point) => {
+    if (data) data.forEach((point) => {
        latLngs.push([point[1], point[0]])
     });
 

@@ -208,20 +208,22 @@ module.exports = function (app) {
                          guidePoint = nextPoint.position;
                       currentGuidePoint = guidePoint;
                       guidePointBearing = geolib.getRhumbLineBearing (currentPosition, guidePoint);
-                      difference = n(guidePointBearing - segmentHeading)
+                      difference = n(n(guidePointBearing) - n(segmentHeading))
 		      distanceToPreviousPoint = geolib.getDistance(currentPosition, previousPoint.position)
 		      if (distanceToPreviousPoint > guideRadius) {
 		            // outside arrival circle (~= guideRadius), clamp to maxErorAngle
 		            maxErrorAngle = configuration["maxErrorAngle"]
                             if (difference < -maxErrorAngle) difference = -maxErrorAngle;
                             if (difference > maxErrorAngle) difference = maxErrorAngle;
-                            headingToSteer = (segmentHeading + difference ) % 360;
+                            headingToSteer = (segmentHeading + difference + 360) % 360;
 		      }
 		      else {
 		            // within arrival circle, simply follow guide point with no clamping
 		            headingToSteer = guidePointBearing;
 		      }
-		      const data = `ECAPB,A,A,${xte.toFixed(3)},R,N,V,V,${segmentHeading.toFixed(1)},T,,${guidePointBearing.toFixed(1)},T,${headingToSteer.toFixed(1)},T`;
+                      var apbXte 
+                      if (configuration["xteZero"]) apbXte = 0; else apbXte = xte;
+		      const data = `ECAPB,A,A,${apbXte.toFixed(3)},R,N,V,V,${segmentHeading.toFixed(1)},T,,${guidePointBearing.toFixed(1)},T,${headingToSteer.toFixed(1)},T`;
 		      const fullSentence = createNmeaSentence(data);
 		      app.emit(configuration["eventName"], fullSentence);
 		      headingPoint = geolib.computeDestinationPoint(currentPosition, guideRadius, headingToSteer);
@@ -303,7 +305,8 @@ module.exports = function (app) {
 		"segmentHeading": segmentHeading,
 		"headingToSteer": headingToSteer,
 		"headingPoint": headingPoint,
-		"routePoints": routePoints
+		"routePoints": routePoints,
+                "xte": xte
 		})
     })
 
@@ -336,6 +339,11 @@ module.exports = function (app) {
         title: 'eventName',
         type: 'string',
         default: 'autopilot_route'
+      },
+      xteZero: {
+        title: 'XTE Zero - Set XTE to zero in APB message.',
+        type: 'boolean',
+        default: true
       }
     }
   }
