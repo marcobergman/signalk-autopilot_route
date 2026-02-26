@@ -21,6 +21,8 @@ const {intersectSphericalCircles} = require('./vector3');
 
 const subscribrPeriod = 1000
 
+const apiRoutePrefix = ""
+
 function createNmeaSentence(payload) {
   let checksum = 0;
   for (let i = 0; i < payload.length; i++) {
@@ -43,6 +45,81 @@ function n(h) {
     return h
 }
 
+function latlon2Dict (latlon) {
+    // convert [lon, lat] to {"latitude": lat, "longitude": lon}
+    return {"latitude": latlon[1], "longitude": latlon[0]}
+}
+
+function getRoutePositionBearing(currentPosition, guideRadius, maxErrorAngle, routePoints) {
+     //
+     //  {
+     //    guidePoint: 
+     //    guidePointBearing: 
+     //    segmentHeading:
+     //    headingToSteer:
+     //  } 
+     //
+    var closestDistance = null;
+    var result = {};
+    for (var r = 0; r < routePoints.length - 1; r++) {
+        previousPoint = latlon2Dict(routePoints[r]);
+        nextPoint = latlon2Dict(routePoints[r+1]);
+        console.log ("Leg", r, "previousPoint", previousPoint, "nextPoint", nextPoint)
+        intersections = intersectSphericalCircles (previousPoint, nextPoint, currentPosition, guideRadius)
+        console.log("intersections", intersections);
+        var guidePoint = null;
+        segmentHeading = geolib.getRhumbLineBearing (previousPoint, nextPoint);
+        intersections.forEach(i => {
+            // First, determine whether the intersection is between the two points, and not on the extension:
+            distanceToPreviousPoint = geolib.getDistance (i, previousPoint);
+            distanceToNextPoint = geolib.getDistance (i, nextPoint);
+            distanceBetweenPoints = geolib.getDistance (previousPoint, nextPoint);
+            onSegment = distanceToPreviousPoint + distanceToNextPoint -distanceBetweenPoints < 2; 
+            // Make an exception for the last leg: we do want to continue on that line
+            if (r == routePoints.length - 2) {onSegment = true; console.log("make exception")};
+            console.log ("distanceToPreviousPoint", distanceToPreviousPoint, "distanceToNextPoint", distanceToNextPoint, "distanceBetweenPoints", distanceBetweenPoints, "onSegment", onSegment);
+            // pick the intersection that is in the general direction of the active route segment
+            intersectionBearing = geolib.getRhumbLineBearing (currentPosition, i);
+            difference = n(n(intersectionBearing) - n(segmentHeading))
+            console.log ("intersectionBearing", intersectionBearing, "segmentHeading", segmentHeading, "difference", difference);
+            if (-90 < difference && difference < +90 && onSegment) {
+                console.log("guidePoint", r, "guidePointBearing", intersectionBearing);
+                result.guidePoint = i;
+                result.guidePointBearing = intersectionBearing;
+                result.segmentHeading = segmentHeading;
+            }
+        });
+
+        // Just in case there are no intersections at all, determine the closest waypoint - and the next one to that.
+        previousPointDistance = geolib.getDistance(currentPosition, previousPoint);
+        if (closestDistance === null || previousPointDistance < closestDistance) {
+            closestDistance = previousPointDistance;
+            closestRoutePoint = previousPoint;
+            closestRoutePointNext = nextPoint;
+            closestSegmentHeading = segmentHeading;
+            console.log("closestDistance", closestDistance);
+        }
+
+    }
+    if (result.guidePoint) {
+        console.log("guidepoint found");
+    } else {
+        console.log("guidepoint not found");
+        // Substitute next point of closest segment for guidepoint
+        result.guidePoint = closestRoutePointNext;
+        result.guidePointBearing = geolib.getRhumbLineBearing (currentPosition, closestRoutePointNext)
+        result.segmentHeading = closestSegmentHeading;
+    }
+
+    // Clamp to maxErorAngle
+    difference = n(n(result.guidePointBearing) - n(result.segmentHeading))
+    if (difference < -maxErrorAngle) difference = -maxErrorAngle;
+    if (difference > maxErrorAngle) difference = maxErrorAngle;
+    result.headingToSteer = (result.segmentHeading + difference + 360) % 360;
+
+    return result;
+}
+
 
 module.exports = function (app) {
   var plugin = {}
@@ -52,7 +129,6 @@ module.exports = function (app) {
   var positionAlarmSent = false
   var configuration
   var delayStartTime
-  var lastTrueHeading
   var currentPosition
   var previousPoint
   var xte
@@ -69,6 +145,26 @@ module.exports = function (app) {
   var state
   var activeRoute
   var routePoints
+  var results = {}
+
+async function getActiveRouteGeoJson(app, routeUuid) {
+  try {
+    const routeData = await app.resourcesApi.getResource('routes', routeUuid);
+
+    app.debug(`Fetched Route: ${routeData.name}`);
+    app.debug(`Route data: ${routeData.feature.geometry.coordinates}`);
+    
+    // The GeoJSON is typically stored in routeData.feature
+    routePoints = routeData.feature.geometry.coordinates;
+    return routeData.feature.geometry.coordinates; 
+
+  } catch (error) {
+    app.error('Error fetching route data:', error.message);
+    return null;
+  }
+}
+
+
 
   plugin.start = function (props) {
     configuration = props
@@ -190,72 +286,41 @@ module.exports = function (app) {
                 if (vp.path === 'navigation.position') {
                   currentPosition = vp.value
                   if (!xte || xte == 'undefined') xte = 0;
-                  // app.debug(`currentPosition ${currentPosition} previousPoint ${previousPoint} nextPoint ${nextPoint} xte ${xte}`);
                   if (typeof currentPosition !== 'undefined' && typeof previousPoint !== 'undefined' && typeof nextPoint !== 'undefined' && xte !== 'undefined' && previousPoint && nextPoint) {
 		      guideRadius = configuration["guideRadius"];
-                      intersections = intersectSphericalCircles (previousPoint.position, nextPoint.position, currentPosition, guideRadius)
-                      let guidePoint
-                      segmentHeading = geolib.getRhumbLineBearing (previousPoint.position, nextPoint.position);
-                      intersections.forEach(i => {
-			 // pick the intersection that is in the general direction of the active route segment
-			 intersectionBearing = geolib.getRhumbLineBearing (currentPosition, i);
-			 difference = n(intersectionBearing - segmentHeading)
-                         if (-90 < difference  && difference < +90) {
-                             guidePoint = i;
-                         }
-		      })
-                      if (! guidePoint)
-                         guidePoint = nextPoint.position;
-                      currentGuidePoint = guidePoint;
-                      guidePointBearing = geolib.getRhumbLineBearing (currentPosition, guidePoint);
-                      difference = n(n(guidePointBearing) - n(segmentHeading))
-		      distanceToPreviousPoint = geolib.getDistance(currentPosition, previousPoint.position)
-		      if (distanceToPreviousPoint > guideRadius) {
-		            // outside arrival circle (~= guideRadius), clamp to maxErorAngle
-		            maxErrorAngle = configuration["maxErrorAngle"]
-                            if (difference < -maxErrorAngle) difference = -maxErrorAngle;
-                            if (difference > maxErrorAngle) difference = maxErrorAngle;
-                            headingToSteer = (segmentHeading + difference + 360) % 360;
-		      }
-		      else {
-		            // within arrival circle, simply follow guide point with no clamping
-		            headingToSteer = guidePointBearing;
-		      }
+		      maxErrorAngle = configuration["maxErrorAngle"]
+                      result = getRoutePositionBearing(currentPosition, guideRadius, maxErrorAngle, routePoints);
+                      app.debug(result);
                       var apbXte 
                       if (configuration["xteZero"]) apbXte = 0; else apbXte = xte;
-		      const data = `ECAPB,A,A,${apbXte.toFixed(3)},R,N,V,V,${segmentHeading.toFixed(1)},T,,${guidePointBearing.toFixed(1)},T,${headingToSteer.toFixed(1)},T`;
+		      const data = `ECAPB,A,A,${apbXte.toFixed(3)},R,N,V,V,${result.segmentHeading.toFixed(1)},T,,${result.guidePointBearing.toFixed(1)},T,${result.headingToSteer.toFixed(1)},T`;
 		      const fullSentence = createNmeaSentence(data);
 		      app.emit(configuration["eventName"], fullSentence);
-		      headingPoint = geolib.computeDestinationPoint(currentPosition, guideRadius, headingToSteer);
-                }
-                } else if (vp.path === 'navigation.course.nextPoint') {
-                  nextPoint = vp.value
-                } else if (vp.path === 'navigation.course.previousPoint') {
-                  previousPoint = vp.value
-                } else if (vp.path === 'navigation.course.calcValues.crossTrackError') {
-                  xte = vp.value / 1852; // meters to nautical miles
-                } else if (vp.path === 'navigation.course.activeRoute') {
-                  v = String(vp.value.href);
-                  activeRoute = String(v.split('/').slice(-1));
-                  routePoints = null;
-		  app.debug("activeRoute", activeRoute);    
-                } else if (String(vp.path.split('.').slice(-1)) === activeRoute) {
-		  routePoints = vp.value.feature.geometry.coordinates;
-                  app.debug ("geometry", routePoints);
-                } else { app.debug("else", vp.path, activeRoute.href, vp);
-                }
+		      headingPoint = geolib.computeDestinationPoint(currentPosition, guideRadius, result.headingToSteer);
+                  }
+                  } else if (vp.path === 'navigation.course.nextPoint') {
+                    nextPoint = vp.value
+                  } else if (vp.path === 'navigation.course.previousPoint') {
+                    previousPoint = vp.value
+                  } else if (vp.path === 'navigation.course.calcValues.crossTrackError') {
+                    xte = vp.value / 1852; // meters to nautical miles
+                  } else if (vp.path === 'navigation.course.activeRoute') {
+                    if (vp.value) {
+                        v = String(vp.value.href);
+                        activeRoute = String(v.split('/').slice(-1));
+                        getActiveRouteGeoJson (app, activeRoute);
+		        app.debug("activeRoute", activeRoute);
+                    } else {
+	                activeRoute = null;
+                        routePoints = null;
+                    }
+                  } else if (String(vp.path.split('.').slice(-1)) === activeRoute) {
+		    routePoints = vp.value.feature.geometry.coordinates;
+                    app.debug ("geometry", routePoints);
+                  }
               })
             }
           })
-        }
-
-        if (currentPosition) {
-        }
-
-        if (typeof trueHeading !== 'undefined' || currentPosition) {
-          if (typeof trueHeading !== 'undefined') {
-            lastTrueHeading = trueHeading
-          }
         }
       }
     )
@@ -294,18 +359,16 @@ module.exports = function (app) {
     })
 
     router.get('/getData', (req, res) => {
-      if(previousPoint && nextPoint)
-      res.json({"previousPoint": previousPoint.position, 
-                "nextPoint": nextPoint.position, 
+      res.json({
+		"routePoints": routePoints,
 		"currentPosition": currentPosition, 
-		"currentGuidePoint": currentGuidePoint, 
 		"guideRadius": configuration["guideRadius"],
 		"maxErrorAngle": configuration["maxErrorAngle"],
-		"guidePointBearing": guidePointBearing,
-		"segmentHeading": segmentHeading,
-		"headingToSteer": headingToSteer,
+		"guidePointBearing": result.guidePointBearing,
+		"currentGuidePoint": result.guidePoint,
+		"segmentHeading": result.segmentHeading,
+		"headingToSteer": result.headingToSteer,
 		"headingPoint": headingPoint,
-		"routePoints": routePoints,
                 "xte": xte
 		})
     })

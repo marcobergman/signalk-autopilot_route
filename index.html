@@ -177,7 +177,6 @@
   var drift;
   var courseData;
   var current;
-  var routeVector;
   var guideVector;
   var guideCircle;
   var headingVector;
@@ -240,13 +239,6 @@
     if (courseData) {
 
 	updateRoute(courseData.routePoints);
-
-        line = [[courseData.previousPoint.latitude, courseData.previousPoint.longitude], [courseData.nextPoint.latitude, courseData.nextPoint.longitude]];
-        if (routeVector) {
-		routeVector.setLatLngs(line);
-	} else {
-		routeVector = L.polyline(line, {color: 'Blue', opacity: 1}).addTo(map);
-        }
 
         line = [[courseData.currentPosition.latitude, courseData.currentPosition.longitude], [courseData.currentGuidePoint.latitude, courseData.currentGuidePoint.longitude]];
         if (guideVector) {
