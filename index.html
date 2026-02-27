@@ -150,14 +150,6 @@
             <span id='headingValue'>-</span>°
           </div>
         </td>
-        <td style="width: 15%; color: pink">
-          <div class="heading">
-            XTE
-          </div>
-          <div class="value">
-            <span id='xteValue'></span>m
-          </div>
-        </td>
       </tr>
     </table>
  </div>
@@ -266,7 +258,7 @@
         $('#guideRadiusValue').html((0.0 + courseData.guideRadius).toFixed(0));
         $('#maxErrorValue').html((0.0 + courseData.maxErrorAngle).toFixed(0));
         $('#headingValue').html((0.0 + courseData.headingToSteer).toFixed(0));
-        $('#xteValue').html(Math.abs(0.0 + courseData.xte * 1852).toFixed(0));
+        //$('#xteValue').html(Math.abs(0.0 + courseData.xte * 1852).toFixed(0));
         map.setView([courseData.currentPosition.latitude, courseData.currentPosition.longitude]);
         if (bounds) {
            bounds.addLatLng({"lat": epLat + deltaLat, "lng": epLng + deltaLng});
