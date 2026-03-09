@@ -75,9 +75,10 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
               distanceToNextPoint = geolib.getDistance (i, nextPoint);
               distanceBetweenPoints = geolib.getDistance (previousPoint, nextPoint);
               onSegment = distanceToPreviousPoint + distanceToNextPoint -distanceBetweenPoints < 2; 
-              // Make an exception for the last leg: we do want to continue on that line
-              if (r == routePoints.length - 2) {onSegment = true; app.debug("make exception")};
-              app.debug ("distanceToPreviousPoint", distanceToPreviousPoint, "distanceToNextPoint", distanceToNextPoint, "distanceBetweenPoints", distanceBetweenPoints, "onSegment", onSegment);
+              // Make an exception for the extension of the last leg: we do want to continue on that line
+              if (r == routePoints.length - 2 && distanceToPreviousPoint > distanceToNextPoint) {onSegment = true; app.debug("make exception")};
+              app.debug ("distanceToPreviousPoint", distanceToPreviousPoint, 
+                      "distanceToNextPoint", distanceToNextPoint, "distanceBetweenPoints", distanceBetweenPoints, "onSegment", onSegment);
               // pick the intersection that is in the general direction of the active route segment
               intersectionBearing = geolib.getRhumbLineBearing (currentPosition, i);
               difference = n(n(intersectionBearing) - n(segmentHeading))
@@ -286,7 +287,8 @@ async function getActiveRouteGeoJson(app, routeUuid) {
                   if (vp.path === 'navigation.position') {
                     currentPosition = vp.value
                     if (!xte || xte == 'undefined') xte = 0;
-                    if (typeof currentPosition !== 'undefined' && typeof previousPoint !== 'undefined' && typeof nextPoint !== 'undefined' && xte !== 'undefined' && previousPoint && nextPoint) {
+                    if (typeof currentPosition !== 'undefined' && typeof previousPoint !== 'undefined' 
+                            && typeof nextPoint !== 'undefined' && xte !== 'undefined' && previousPoint && nextPoint) {
 			if (!activeRoute) routePoints = [[previousPoint.longitude, previousPoint.latitude], [nextPoint.longitude, nextPoint.latitude]];
 		        guideRadius = configuration["guideRadius"];
 		        maxErrorAngle = configuration["maxErrorAngle"]
