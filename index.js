@@ -104,19 +104,20 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
       }
       if (result.guidePoint) {
           app.debug("guidepoint found");
+          // Clamp to maxErorAngle
+          difference = n(n(result.guidePointBearing) - n(result.segmentHeading))
+          if (difference < -maxErrorAngle) difference = -maxErrorAngle;
+          if (difference > maxErrorAngle) difference = maxErrorAngle;
+          result.headingToSteer = (result.segmentHeading + difference + 360) % 360;
       } else {
-          app.debug("guidepoint not found");
+          app.debug("guidepoint not found - direct to waypoint, no clamping");
           // Substitute next point of closest segment for guidepoint
           result.guidePoint = closestRoutePointNext;
           result.guidePointBearing = geolib.getRhumbLineBearing (currentPosition, closestRoutePointNext)
           result.segmentHeading = closestSegmentHeading;
+          result.headingToSteer = result.guidePointBearing;
       }
 
-      // Clamp to maxErorAngle
-      difference = n(n(result.guidePointBearing) - n(result.segmentHeading))
-      if (difference < -maxErrorAngle) difference = -maxErrorAngle;
-      if (difference > maxErrorAngle) difference = maxErrorAngle;
-      result.headingToSteer = (result.segmentHeading + difference + 360) % 360;
 
       return result;
 }
