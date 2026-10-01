@@ -64,9 +64,9 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
       for (var r = 0; r < routePoints.length - 1; r++) {
           previousPoint = latlon2Dict(routePoints[r]);
           nextPoint = latlon2Dict(routePoints[r+1]);
-          app.debug ("Leg", r, "previousPoint", previousPoint, "nextPoint", nextPoint)
+          //app.debug ("Leg", r, "previousPoint", previousPoint, "nextPoint", nextPoint)
           intersections = intersectSphericalCircles (previousPoint, nextPoint, currentPosition, guideRadius)
-          app.debug("intersections", intersections);
+          app.debug("Leg", r, "intersections", intersections);
           var guidePoint = null;
           segmentHeading = geolib.getRhumbLineBearing (previousPoint, nextPoint);
           intersections.forEach(i => {
@@ -108,7 +108,16 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
           difference = n(n(result.guidePointBearing) - n(result.segmentHeading))
           if (difference < -maxErrorAngle) difference = -maxErrorAngle;
           if (difference > maxErrorAngle) difference = maxErrorAngle;
-          result.headingToSteer = (result.segmentHeading + difference + 360) % 360;
+          if (distanceToPreviousPoint > guideRadius + 15 ) 
+              {
+                 result.headingToSteer = (result.segmentHeading + difference + 360) % 360;
+                 app.debug("regular clamping, if required");
+              }
+          else
+              {
+                 result.headingToSteer = result.guidePointBearing;
+                 app.debug("no clamping");
+              }
       } else {
           app.debug("guidepoint not found - direct to waypoint, no clamping");
           // Substitute next point of closest segment for guidepoint
@@ -387,7 +396,7 @@ async function getActiveRouteGeoJson(app, routeUuid) {
     plugin.schema = {
       title: 'Autopilot Route Follower',
       type: 'object',
-      required: ['guideRadius', 'active'],
+      required: ['guideRadius', 'maxErrorAngle', 'xteZero'],
       properties: {
         guideRadius: {
           type: 'number',
