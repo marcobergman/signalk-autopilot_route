@@ -53,11 +53,11 @@ function latlon2Dict (latlon) {
 function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngle, routePoints) {
        //
        //  {
-       //    guidePoint: 
-       //    guidePointBearing: 
+       //    guidePoint:
+       //    guidePointBearing:
        //    segmentHeading:
        //    headingToSteer:
-       //  } 
+       //  }
        //
       var closestDistance = null;
       var result = {};
@@ -74,10 +74,10 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
               distanceToPreviousPoint = geolib.getDistance (i, previousPoint);
               distanceToNextPoint = geolib.getDistance (i, nextPoint);
               distanceBetweenPoints = geolib.getDistance (previousPoint, nextPoint);
-              onSegment = distanceToPreviousPoint + distanceToNextPoint -distanceBetweenPoints < 2; 
+              onSegment = distanceToPreviousPoint + distanceToNextPoint -distanceBetweenPoints < 2;
               // Make an exception for the extension of the last leg: we do want to continue on that line
               if (r == routePoints.length - 2 && distanceToPreviousPoint > distanceToNextPoint) {onSegment = true; app.debug("make exception")};
-              app.debug ("distanceToPreviousPoint", distanceToPreviousPoint, 
+              app.debug ("distanceToPreviousPoint", distanceToPreviousPoint,
                       "distanceToNextPoint", distanceToNextPoint, "distanceBetweenPoints", distanceBetweenPoints, "onSegment", onSegment);
               // pick the intersection that is in the general direction of the active route segment
               intersectionBearing = geolib.getRhumbLineBearing (currentPosition, i);
@@ -88,6 +88,7 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
                   result.guidePoint = i;
                   result.guidePointBearing = intersectionBearing;
                   result.segmentHeading = segmentHeading;
+                  result.distanceToPreviousPoint = distanceToPreviousPoint
               }
           });
 
@@ -108,7 +109,7 @@ function getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngl
           difference = n(n(result.guidePointBearing) - n(result.segmentHeading))
           if (difference < -maxErrorAngle) difference = -maxErrorAngle;
           if (difference > maxErrorAngle) difference = maxErrorAngle;
-          if (distanceToPreviousPoint > guideRadius + 15 ) 
+          if (result.distanceToPreviousPoint > guideRadius * 1.5 )
               {
                  result.headingToSteer = (result.segmentHeading + difference + 360) % 360;
                  app.debug("regular clamping, if required");
@@ -164,10 +165,10 @@ async function getActiveRouteGeoJson(app, routeUuid) {
 
       app.debug(`Fetched Route: ${routeData.name}`);
       app.debug(`Route data: ${routeData.feature.geometry.coordinates}`);
-      
+
       // The GeoJSON is typically stored in routeData.feature
       routePoints = routeData.feature.geometry.coordinates;
-      return routeData.feature.geometry.coordinates; 
+      return routeData.feature.geometry.coordinates;
 
     } catch (error) {
       app.error('Error fetching route data:', error.message);
@@ -199,7 +200,7 @@ async function getActiveRouteGeoJson(app, routeUuid) {
             }
           ]
         })
-	    
+
       } catch (e) {
         plugin.started = false
         app.error('error: ' + e)
@@ -209,7 +210,7 @@ async function getActiveRouteGeoJson(app, routeUuid) {
     }
 
 
-    
+
 
     function putRodeLength(context, path, value) {
       app.handleMessage(plugin.id, {
@@ -277,7 +278,7 @@ async function getActiveRouteGeoJson(app, routeUuid) {
               period: subscribrPeriod
             },
             {
-              path: 'navigation.course.activeRoute', 
+              path: 'navigation.course.activeRoute',
               period: subscribrPeriod
             }
           ]
@@ -297,19 +298,19 @@ async function getActiveRouteGeoJson(app, routeUuid) {
                   if (vp.path === 'navigation.position') {
                     currentPosition = vp.value
                     if (!xte || xte == 'undefined') xte = 0;
-                    if (typeof currentPosition !== 'undefined' && typeof previousPoint !== 'undefined' 
+                    if (typeof currentPosition !== 'undefined' && typeof previousPoint !== 'undefined'
                             && typeof nextPoint !== 'undefined' && xte !== 'undefined' && previousPoint && nextPoint) {
-			if (!activeRoute) routePoints = [[previousPoint.longitude, previousPoint.latitude], [nextPoint.longitude, nextPoint.latitude]];
-		        guideRadius = configuration["guideRadius"];
-		        maxErrorAngle = configuration["maxErrorAngle"]
+                        if (!activeRoute) routePoints = [[previousPoint.longitude, previousPoint.latitude], [nextPoint.longitude, nextPoint.latitude]];
+                        guideRadius = configuration["guideRadius"];
+                        maxErrorAngle = configuration["maxErrorAngle"]
                         result = getRoutePositionBearing(app, currentPosition, guideRadius, maxErrorAngle, routePoints);
                         app.debug(result);
-                        var apbXte 
+                        var apbXte
                         if (configuration["xteZero"]) apbXte = 0; else apbXte = xte;
-		        const data = `ECAPB,A,A,${apbXte.toFixed(3)},R,N,V,V,${result.segmentHeading.toFixed(1)},T,,${result.guidePointBearing.toFixed(1)},T,${result.headingToSteer.toFixed(1)},T`;
-		        const fullSentence = createNmeaSentence(data);
-		        app.emit(configuration["eventName"], fullSentence);
-		        headingPoint = geolib.computeDestinationPoint(currentPosition, guideRadius, result.headingToSteer);
+                        const data = `ECAPB,A,A,${apbXte.toFixed(3)},R,N,V,V,${result.segmentHeading.toFixed(1)},T,,${result.guidePointBearing.toFixed(1)},T,${result.headingToSteer.toFixed(1)},T`;
+                        const fullSentence = createNmeaSentence(data);
+                        app.emit(configuration["eventName"], fullSentence);
+                        headingPoint = geolib.computeDestinationPoint(currentPosition, guideRadius, result.headingToSteer);
                     }
                     } else if (vp.path === 'navigation.course.nextPoint') {
                       if (vp.value) nextPoint = vp.value.position; else nextPoint = null;
@@ -322,13 +323,13 @@ async function getActiveRouteGeoJson(app, routeUuid) {
                           v = String(vp.value.href);
                           activeRoute = String(v.split('/').slice(-1));
                           getActiveRouteGeoJson (app, activeRoute);
-		          app.debug("activeRoute", activeRoute);
+                          app.debug("activeRoute", activeRoute);
                       } else {
-	                  activeRoute = null;
+                          activeRoute = null;
                           routePoints = [];
                       }
                     } else if (String(vp.path.split('.').slice(-1)) === activeRoute) {
-		      routePoints = vp.value.feature.geometry.coordinates;
+                      routePoints = vp.value.feature.geometry.coordinates;
                       app.debug ("geometry", routePoints);
                     }
                 })
@@ -373,17 +374,17 @@ async function getActiveRouteGeoJson(app, routeUuid) {
 
       router.get('/getData', (req, res) => {
         res.json({
-		"routePoints": routePoints,
-		"currentPosition": currentPosition, 
-		"guideRadius": configuration["guideRadius"],
-		"maxErrorAngle": configuration["maxErrorAngle"],
-		"guidePointBearing": result.guidePointBearing,
-		"currentGuidePoint": result.guidePoint,
-		"segmentHeading": result.segmentHeading,
-		"headingToSteer": result.headingToSteer,
-		"headingPoint": headingPoint,
+                "routePoints": routePoints,
+                "currentPosition": currentPosition,
+                "guideRadius": configuration["guideRadius"],
+                "maxErrorAngle": configuration["maxErrorAngle"],
+                "guidePointBearing": result.guidePointBearing,
+                "currentGuidePoint": result.guidePoint,
+                "segmentHeading": result.segmentHeading,
+                "headingToSteer": result.headingToSteer,
+                "headingPoint": headingPoint,
                 "xte": xte
-		})
+                })
       })
 
     }
@@ -424,5 +425,4 @@ async function getActiveRouteGeoJson(app, routeUuid) {
 
     return plugin
 }
-
 
